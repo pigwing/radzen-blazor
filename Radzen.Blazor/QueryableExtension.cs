@@ -2,6 +2,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Linq.Dynamic.Core;
 
@@ -44,6 +45,8 @@ namespace Radzen
             {FilterOperator.EndsWith, "EndsWith"},
             {FilterOperator.Contains, "Contains"},
             {FilterOperator.DoesNotContain, "DoesNotContain"},
+            {FilterOperator.In, "In"},
+            {FilterOperator.NotIn, "NotIn"},
             {FilterOperator.IsNull, "=="},
             {FilterOperator.IsEmpty, "=="},
             {FilterOperator.IsNotNull, "!="},
@@ -68,7 +71,9 @@ namespace Radzen
             {FilterOperator.IsNull, "eq"},
             {FilterOperator.IsEmpty, "eq"},
             {FilterOperator.IsNotNull, "ne"},
-            {FilterOperator.IsNotEmpty, "ne"}
+            {FilterOperator.IsNotEmpty, "ne"},
+            {FilterOperator.In, "in"},
+            {FilterOperator.NotIn, "in"}
         };
 
         /// <summary>
@@ -234,8 +239,8 @@ namespace Radzen
                     }
                     else
                     {
-                        value = (string)Convert.ChangeType(column.GetFilterValue(), typeof(string));
-                        secondValue = (string)Convert.ChangeType(column.GetSecondFilterValue(), typeof(string));
+                        value = (string)Convert.ChangeType(column.GetFilterValue(), typeof(string), CultureInfo.InvariantCulture);
+                        secondValue = (string)Convert.ChangeType(column.GetSecondFilterValue(), typeof(string), CultureInfo.InvariantCulture);
                     }
 
                     if (!string.IsNullOrEmpty(value) || column.GetFilterOperator() == FilterOperator.IsNotNull
@@ -309,7 +314,7 @@ namespace Radzen
 
                 if (columnFormat == "date-time" || columnFormat == "date")
                 {
-                    var dateTimeValue = DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind);
+                    var dateTimeValue = DateTime.Parse(value, CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
                     var finalDate = dateTimeValue.TimeOfDay == TimeSpan.Zero ? dateTimeValue.Date : dateTimeValue;
                     var dateFormat = dateTimeValue.TimeOfDay == TimeSpan.Zero ? "yyyy-MM-dd" : "yyyy-MM-ddTHH:mm:ss.fffZ";
 
@@ -460,7 +465,7 @@ namespace Radzen
                 }
                 else
                 {
-                    var dateTimeValue = DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind);
+                    var dateTimeValue = DateTime.Parse(value, CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
                     var finalDate = dateTimeValue.TimeOfDay == TimeSpan.Zero ? dateTimeValue.Date : dateTimeValue;
                     var dateFormat = dateTimeValue.TimeOfDay == TimeSpan.Zero ? "yyyy-MM-dd" : "yyyy-MM-ddTHH:mm:ss.fffZ";
                     var dateFunction = column.FilterPropertyType == typeof(DateTimeOffset) || column.FilterPropertyType == typeof(DateTimeOffset?) ? "DateTimeOffset" : "DateTime";
@@ -519,7 +524,7 @@ namespace Radzen
             {
                 if (columnFormat == "date-time" || columnFormat == "date")
                 {
-                    return $"{property} {columnFilterOperator} {DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")}";
+                    return $"{property} {columnFilterOperator} {DateTime.Parse(value, CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")}";
                 }
                 else if (columnFormat == "time")
                 {
@@ -594,7 +599,7 @@ namespace Radzen
 
             var value = IsEnumerable(column.FilterPropertyType) && column.FilterPropertyType != typeof(string)
                 ? null
-                : (string)Convert.ChangeType(filterValue, typeof(string));
+                : (string)Convert.ChangeType(filterValue, typeof(string), CultureInfo.InvariantCulture);
 
             if (column.Grid.FilterCaseSensitivity == FilterCaseSensitivity.CaseInsensitive && column.FilterPropertyType == typeof(string))
             {
@@ -659,6 +664,10 @@ namespace Radzen
                 var enumerableValueAsString = "(" + String.Join(",",
                         (enumerableValue.ElementType == typeof(string) ? enumerableValue.Cast<string>().Select(i => $@"'{i}'").Cast<object>() : enumerableValue.Cast<object>())) + ")";
 
+                var enumerableValueAsStringOrForAny = String.Join(" or ",
+                    (enumerableValue.ElementType == typeof(string) ? enumerableValue.Cast<string>()
+                        .Select(i => $@"i/{property} eq '{i}'").Cast<object>() : enumerableValue.Cast<object>().Select(i => $@"i/{property} eq {i}").Cast<object>()));
+
                 if (enumerableValue.Any() && columnFilterOperator == FilterOperator.Contains)
                 {
                     return $"{property} in {enumerableValueAsString}";
@@ -666,6 +675,14 @@ namespace Radzen
                 else if (enumerableValue.Any() && columnFilterOperator == FilterOperator.DoesNotContain)
                 {
                     return $"not({property} in {enumerableValueAsString})";
+                }
+                else if (enumerableValue.Any() && columnFilterOperator == FilterOperator.In)
+                {
+                    return $"{column.Property}/any(i:{enumerableValueAsStringOrForAny})";
+                }
+                else if (enumerableValue.Any() && columnFilterOperator == FilterOperator.NotIn)
+                {
+                    return $"not({column.Property}/any(i: {enumerableValueAsStringOrForAny}))";
                 }
             }
             else if (PropertyAccess.IsNumeric(column.FilterPropertyType))
@@ -702,7 +719,7 @@ namespace Radzen
                 }
                 else
                 {
-                    return $"{property} {odataFilterOperator} {DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")}";
+                    return $"{property} {odataFilterOperator} {DateTime.Parse(value, CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")}";
                 }
             }
             else if (column.FilterPropertyType == typeof(Guid) || column.FilterPropertyType == typeof(Guid?))
@@ -905,7 +922,10 @@ namespace Radzen
             return source;
         }
 
-        private static bool IsEnumerable(Type type)
+        /// <summary>
+        /// Gets if type is IEnumerable.
+        /// </summary>
+        public static bool IsEnumerable(Type type)
         {
             return typeof(IEnumerable).IsAssignableFrom(type) || typeof(IEnumerable<>).IsAssignableFrom(type);
         }
@@ -985,6 +1005,21 @@ namespace Radzen
                             }
 
                             index++;
+                        }
+                        else if (comparison == "In" || comparison == "NotIn")
+                        {
+                            if (IsEnumerable(column.FilterPropertyType) && column.FilterPropertyType != typeof(string) && 
+                                    IsEnumerable(column.PropertyType) && column.PropertyType != typeof(string))
+                            {
+                                whereList.Add($@"{(comparison == "NotIn" ? "!" : "")}{property}.Any(i => i in @{index})", new object[] { column.GetFilterValue() });
+                                index++;
+                            }
+                            else if (IsEnumerable(column.FilterPropertyType) && column.FilterPropertyType != typeof(string) && 
+                                column.Property != column.FilterProperty && !string.IsNullOrEmpty(column.FilterProperty))
+                            {
+                                whereList.Add($@"{(comparison == "NotIn" ? "!" : "")}{column.Property}.Any(i => i.{column.FilterProperty} in @{index})", new object[] { column.GetFilterValue() });
+                                index++;
+                            }
                         }
                         else if (!(IsEnumerable(column.FilterPropertyType) && column.FilterPropertyType != typeof(string)))
                         {
@@ -1293,7 +1328,7 @@ namespace Radzen
                     }
                     else if (column.FilterPropertyType == typeof(DateTime) || column.FilterPropertyType == typeof(DateTime?))
                     {
-                        value = $"{DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")}";
+                        value = $"{DateTime.Parse(value, CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")}";
                     }
                     else if (column.FilterPropertyType == typeof(bool) || column.FilterPropertyType == typeof(bool?))
                     {

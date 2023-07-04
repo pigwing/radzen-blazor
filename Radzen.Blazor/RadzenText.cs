@@ -1,5 +1,8 @@
+using System;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
+using Microsoft.AspNetCore.Components.Routing;
+using Microsoft.JSInterop;
 using Radzen.Blazor.Rendering;
 
 namespace Radzen.Blazor
@@ -9,24 +12,43 @@ namespace Radzen.Blazor
     /// </summary>
     public enum TextStyle
     {
+        /// <summary>Display as largest header.</summary>
         DisplayH1,
+        /// <summary>Display as second largest header.</summary>
         DisplayH2,
+        /// <summary>Display as third largest header.</summary>
         DisplayH3,
+        /// <summary>Display as fourth largest header.</summary>
         DisplayH4,
+        /// <summary>Display as fifth largest header.</summary>
         DisplayH5,
+        /// <summary>Display as sixth largest header.</summary>
         DisplayH6,
+        /// <summary>Display as H1 element.</summary>
         H1,
+        /// <summary>Display as H2 element.</summary>
         H2,
+        /// <summary>Display as H3 element.</summary>
         H3,
+        /// <summary>Display as H4 element.</summary>
         H4,
+        /// <summary>Display as H5 element.</summary>
         H5,
+        /// <summary>Display as H6 element.</summary>
         H6,
+        /// <summary>Display as subtitle.</summary>
         Subtitle1,
+        /// <summary>Display as a smaller subtitle.</summary>
         Subtitle2,
+        /// <summary>Display as a paragraph.</summary>
         Body1,
+        /// <summary>Display as a smaller paragraph.</summary>
         Body2,
+        /// <summary>Display as button text.</summary>
         Button,
+        /// <summary>Display as a caption.</summary>
         Caption,
+        /// <summary>Display as overline.</summary>
         Overline
     }
 
@@ -75,6 +97,60 @@ namespace Radzen.Blazor
     /// </example>
     public class RadzenText : RadzenComponent
     {
+        class RadzenTextAnchor : ComponentBase, IDisposable
+        {
+            [Inject]
+            NavigationManager NavigationManager { get; set; }
+
+            [Inject]
+            IJSRuntime JSRuntime { get; set; }
+
+            [Parameter]
+            public string Path { get; set; }
+
+            private string GetAnchor()
+            {
+                var fragments = Path.Split('#');
+
+                return fragments.Length > 1 ? fragments[1] : fragments[0];
+            }
+
+            private ElementReference element;
+
+            protected override void OnInitialized()
+            {
+                NavigationManager.LocationChanged += OnLocationChanged;
+            }
+
+            void OnLocationChanged(object sender, LocationChangedEventArgs e)
+            {
+                if (e.Location.EndsWith(GetAnchor(), StringComparison.InvariantCultureIgnoreCase))
+                {
+                    JSRuntime.InvokeVoidAsync("Element.prototype.scrollIntoView.call", element);
+                }
+            }
+
+            protected override void BuildRenderTree(RenderTreeBuilder builder)
+            {
+                builder.OpenElement(1, "a");
+                builder.AddAttribute(2, "name", GetAnchor());
+                builder.AddAttribute(3, "href", Path);
+                builder.AddAttribute(4, "class", "rz-link");
+                builder.AddAttribute(5, "target", "_top"); // To support relative links without the Blazor router interfering
+                builder.AddElementReferenceCapture(6, capture => element = capture);
+                builder.OpenComponent<RadzenIcon>(7);
+                builder.AddAttribute(8, "Icon", "link");
+                builder.CloseComponent();
+
+                builder.CloseElement();
+            }
+
+            void IDisposable.Dispose()
+            {
+                NavigationManager.LocationChanged -= OnLocationChanged;
+            }
+        }
+
         /// <summary>
         /// The text that will be displayed.
         /// </summary>
@@ -286,20 +362,11 @@ namespace Radzen.Blazor
 
                 if (!string.IsNullOrEmpty(Anchor))
                 {
-                    var fragments = Anchor.Split('#');
-                    var name = fragments.Length > 1 ? fragments[1] : fragments[0];
-                    builder.OpenElement(6, "a");
-                    builder.AddAttribute(7, "name", name);
-                    builder.AddAttribute(8, "href", Anchor);
-                    builder.AddAttribute(9, "class", "rz-link");
-                    builder.AddAttribute(10, "target", "_top"); // To support relative links without the Blazor router interfering
-                    builder.OpenComponent<RadzenIcon>(11);
-                    builder.AddAttribute(12, "Icon", "link");
+                    builder.OpenComponent<RadzenTextAnchor>(6);
+                    builder.AddAttribute(7, nameof(RadzenTextAnchor.Path), Anchor);
                     builder.CloseComponent();
-
-                    builder.CloseElement();
                 }
-                builder.AddElementReferenceCapture(13, capture => Element = capture);
+                builder.AddElementReferenceCapture(8, capture => Element = capture);
                 builder.CloseElement();
             }
         }
